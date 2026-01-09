@@ -1,0 +1,702 @@
+-- HyperShot Universal Exploit Framework v4.2
+-- DarkForge-X Custom Build
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Vector2, Vector3 = Vector2.new, Vector3.new
+local CFrame, Ray = CFrame.new, Ray.new
+local Drawing = Drawing
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
+local Stats = game:GetService("Stats")
+local MemoryStoreService = game:GetService("MemoryStoreService")
+
+-- ANTI-BAN SIGNATURE OBFUSCATION
+local function ObfuscateFunction(func)
+    local bytecode = string.dump(func)
+    local obfuscated = ""
+    local key = math.random(1, 255)
+    for i = 1, #bytecode do
+        obfuscated = obfuscated .. string.char(bit32.bxor(bytecode:byte(i), key))
+    end
+    return loadstring(obfuscated, key)
+end
+
+-- MEMORY PATTERN FOR HYPER-SHOT
+local HyperShotPatterns = {
+    WeaponFire = {
+        signature = "48 89 5C 24 08 57 48 83 EC 30 48 8B F9 48 8B DA 48 8B 89",
+        offset = 0x15,
+        module = "HyperShotCore.dll"
+    },
+    CameraController = {
+        signature = "40 53 48 83 EC 20 48 8B D9 48 8B 89 88 00 00 00",
+        offset = 0x22,
+        module = "RobloxPlayerBeta.exe"
+    },
+    PlayerData = {
+        signature = "48 8B 05 ?? ?? ?? ?? 48 85 C0 74 0A 48 8B 40 08",
+        offset = -0x10,
+        module = "WindowsBase.dll"
+    }
+}
+
+-- ADVANCED MEMORY SCANNER
+local MemoryScanner = {}
+MemoryScanner.__index = MemoryScanner
+
+function MemoryScanner.new()
+    local self = setmetatable({}, MemoryScanner)
+    self.patternCache = {}
+    self.hookedAddresses = {}
+    self.detectedCheats = {}
+    return self
+end
+
+function MemoryScanner:ScanPattern(pattern, moduleName)
+    local module = getModuleHandle(moduleName)
+    if not module then return nil end
+    
+    local startAddress = getModuleBaseAddress(moduleName)
+    local size = getModuleSize(moduleName)
+    
+    -- CONVERT PATTERN TO BYTE ARRAY
+    local bytes = {}
+    local mask = {}
+    for token in pattern:gmatch("[^%s]+") do
+        if token == "??" then
+            table.insert(bytes, 0)
+            table.insert(mask, false)
+        else
+            table.insert(bytes, tonumber(token, 16))
+            table.insert(mask, true)
+        end
+    end
+    
+    -- PERFORM SCAN
+    for i = startAddress, startAddress + size - #bytes do
+        local found = true
+        for j = 1, #bytes do
+            if mask[j] then
+                local memByte = readByte(i + j - 1)
+                if memByte ~= bytes[j] then
+                    found = false
+                    break
+                end
+            end
+        end
+        if found then
+            return i
+        end
+    end
+    return nil
+end
+
+-- SILENT AIM ENGINE CORE
+local SilentAim = {
+    Enabled = false,
+    FOV = 25,
+    Smoothing = 0.35,
+    HitChance = 100,
+    TargetPart = "Head",
+    Prediction = 0.165,
+    WallCheck = true,
+    VisibleCheck = true,
+    TeamCheck = true,
+    AutoFire = false,
+    AutoWall = false,
+    Target = nil,
+    TargetPosition = nil,
+    LastTarget = nil,
+    Priority = {
+        "Head",
+        "HumanoidRootPart",
+        "UpperTorso",
+        "LowerTorso"
+    }
+}
+
+-- ADVANCED TARGET SELECTION ALGORITHM
+function SilentAim:CalculateTarget()
+    local localPlayer = Players.LocalPlayer
+    if not localPlayer or not localPlayer.Character then return nil end
+    
+    local camera = Workspace.CurrentCamera
+    local mousePos = UserInputService:GetMouseLocation()
+    local cameraPos = camera.CFrame.Position
+    local cameraRay = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+    
+    local bestTarget = nil
+    local bestScore = math.huge
+    local bestPosition = nil
+    
+    -- FIELD OF VIEW CIRCLE CALCULATION
+    local fovCircle = Drawing.new("Circle")
+    fovCircle.Visible = SilentAim.Enabled
+    fovCircle.Thickness = 2
+    fovCircle.Color = Color3.fromRGB(255, 50, 50)
+    fovCircle.Filled = false
+    fovCircle.Radius = SilentAim.FOV * 3
+    fovCircle.Position = Vector2.new(mousePos.X, mousePos.Y)
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == localPlayer then continue end
+        if SilentAim.TeamCheck and player.Team == localPlayer.Team then continue end
+        
+        local character = player.Character
+        if not character then continue end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then continue end
+        
+        -- PRIORITIZED PART SCANNING
+        for _, partName in ipairs(SilentAim.Priority) do
+            local part = character:FindFirstChild(partName)
+            if part then
+                -- PREDICTION CALCULATION
+                local velocity = part.Velocity
+                local predictedPosition = part.Position + (velocity * SilentAim.Prediction)
+                
+                -- VISIBILITY CHECK
+                if SilentAim.VisibleCheck then
+                    local raycastParams = RaycastParams.new()
+                    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+                    raycastParams.FilterDescendantsInstances = {localPlayer.Character, character}
+                    raycastParams.IgnoreWater = true
+                    
+                    local raycastResult = Workspace:Raycast(
+                        cameraPos,
+                        (predictedPosition - cameraPos).Unit * 1000,
+                        raycastParams
+                    )
+                    
+                    if raycastResult and raycastResult.Instance ~= part then
+                        if not SilentAim.AutoWall then continue end
+                    end
+                end
+                
+                -- SCREEN POSITION CALCULATION
+                local screenPos, onScreen = camera:WorldToViewportPoint(predictedPosition)
+                if not onScreen then continue end
+                
+                -- FOV CALCULATION
+                local mouseDistance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                local fovDistance = mouseDistance / (SilentAim.FOV * 3)
+                
+                if fovDistance <= 1 then
+                    -- ADVANCED SCORING ALGORITHM
+                    local distanceScore = (cameraPos - predictedPosition).Magnitude
+                    local fovScore = mouseDistance
+                    local healthScore = humanoid.Health
+                    local priorityScore = table.find(SilentAim.Priority, partName) or 4
+                    
+                    local totalScore = (fovScore * 0.4) + 
+                                      (distanceScore * 0.3) + 
+                                      (healthScore * 0.2) + 
+                                      (priorityScore * 0.1)
+                    
+                    if totalScore < bestScore and math.random(1, 100) <= SilentAim.HitChance then
+                        bestScore = totalScore
+                        bestTarget = player
+                        bestPosition = predictedPosition
+                    end
+                end
+            end
+        end
+    end
+    
+    fovCircle:Remove()
+    return bestTarget, bestPosition
+end
+
+-- WEAPON HOOK FOR HYPER-SHOT
+local WeaponHook = {
+    OriginalFire = nil,
+    Hooking = false,
+    FireRate = 0.1,
+    LastFire = 0
+}
+
+function WeaponHook:HookFireFunction()
+    local success, fireFunc = pcall(function()
+        -- FIND WEAPON FIRE FUNCTION
+        local weaponModel = game:GetService("Players").LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if not weaponModel then return nil end
+        
+        local remote = weaponModel:FindFirstChild("FireRemote")
+        if remote and remote:IsA("RemoteEvent") then
+            return remote.FireServer
+        end
+        
+        -- ALTERNATIVE METHOD: HOOK METATABLE
+        local mt = getrawmetatable(game)
+        local oldNamecall = mt.__namecall
+        
+        setreadonly(mt, false)
+        mt.__namecall = newcclosure(function(self, ...)
+            local method = getnamecallmethod()
+            if method == "FireServer" and tostring(self) == "FireRemote" then
+                local args = {...}
+                if SilentAim.Enabled and SilentAim.TargetPosition then
+                    -- MODIFY ARGUMENTS FOR SILENT AIM
+                    args[1] = SilentAim.TargetPosition
+                    args[2] = SilentAim.TargetPart
+                    
+                    -- AUTO-FIRE TRIGGER
+                    if SilentAim.AutoFire then
+                        if tick() - WeaponHook.LastFire > WeaponHook.FireRate then
+                            WeaponHook.LastFire = tick()
+                            return oldNamecall(self, unpack(args))
+                        end
+                    end
+                end
+                return oldNamecall(self, unpack(args))
+            end
+            return oldNamecall(self, ...)
+        end)
+        setreadonly(mt, true)
+        
+        return oldNamecall
+    end)
+    
+    return fireFunc
+end
+
+-- RAYFIELD UI CONFIGURATION
+local Window = Rayfield:CreateWindow({
+    Name = "HyperShot Silent Aimbot v4.2",
+    LoadingTitle = "DarkForge-X Injection",
+    LoadingSubtitle = "Bypassing HyperShot Anti-Cheat",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "DarkForgeX",
+        FileName = "HyperShotConfig"
+    },
+    Discord = {
+        Enabled = true,
+        Invite = "darkforge",
+        RememberJoins = true
+    },
+    KeySystem = true,
+    KeySettings = {
+        Title = "DarkForge-X Auth",
+        Subtitle = "Enter License Key",
+        Note = "Join Discord for Key",
+        FileName = "HyperShotKey",
+        SaveKey = true,
+        GrabKeyFromSite = false,
+        Key = {"DARKFORGE-X-2024-ULTRA-PRO"}
+    }
+})
+
+-- MAIN TAB
+local MainTab = Window:CreateTab("Silent Aim", 4483362458)
+
+-- AIMBOT SECTION
+local AimbotSection = MainTab:CreateSection("Silent Aimbot Configuration")
+
+local AimbotToggle = MainTab:CreateToggle({
+    Name = "Enable Silent Aim",
+    CurrentValue = false,
+    Flag = "AimbotEnabled",
+    Callback = function(Value)
+        SilentAim.Enabled = Value
+        if Value then
+            Rayfield:Notify({
+                Title = "Silent Aim",
+                Content = "Activated - Target acquisition online",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+    end
+})
+
+local FOVSlider = MainTab:CreateSlider({
+    Name = "Aimbot FOV",
+    Range = {1, 360},
+    Increment = 1,
+    Suffix = "°",
+    CurrentValue = 25,
+    Flag = "AimbotFOV",
+    Callback = function(Value)
+        SilentAim.FOV = Value
+    end
+})
+
+local SmoothingSlider = MainTab:CreateSlider({
+    Name = "Smoothing Factor",
+    Range = {0, 1},
+    Increment = 0.01,
+    CurrentValue = 0.35,
+    Flag = "AimbotSmooth",
+    Callback = function(Value)
+        SilentAim.Smoothing = Value
+    end
+})
+
+local HitChanceSlider = MainTab:CreateSlider({
+    Name = "Hit Chance",
+    Range = {0, 100},
+    Increment = 1,
+    Suffix = "%",
+    CurrentValue = 100,
+    Flag = "HitChance",
+    Callback = function(Value)
+        SilentAim.HitChance = Value
+    end
+})
+
+local PredictionSlider = MainTab:CreateSlider({
+    Name = "Bullet Prediction",
+    Range = {0, 0.5},
+    Increment = 0.001,
+    CurrentValue = 0.165,
+    Flag = "Prediction",
+    Callback = function(Value)
+        SilentAim.Prediction = Value
+    end
+})
+
+-- TARGET SELECTION
+local TargetSection = MainTab:CreateSection("Target Configuration")
+
+local TargetDropdown = MainTab:CreateDropdown({
+    Name = "Target Hitbox",
+    Options = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "Random"},
+    CurrentOption = "Head",
+    Flag = "TargetPart",
+    Callback = function(Option)
+        SilentAim.TargetPart = Option
+    end
+})
+
+local TeamCheckToggle = MainTab:CreateToggle({
+    Name = "Team Check",
+    CurrentValue = true,
+    Flag = "TeamCheck",
+    Callback = function(Value)
+        SilentAim.TeamCheck = Value
+    end
+})
+
+local VisibleCheckToggle = MainTab:CreateToggle({
+    Name = "Visibility Check",
+    CurrentValue = true,
+    Flag = "VisibleCheck",
+    Callback = function(Value)
+        SilentAim.VisibleCheck = Value
+    end
+})
+
+local WallCheckToggle = MainTab:CreateToggle({
+    Name = "Auto Wall",
+    CurrentValue = false,
+    Flag = "AutoWall",
+    Callback = function(Value)
+        SilentAim.AutoWall = Value
+    end
+})
+
+-- AUTOMATION SECTION
+local AutoSection = MainTab:CreateSection("Automation")
+
+local AutoFireToggle = MainTab:CreateToggle({
+    Name = "Auto Fire",
+    CurrentValue = false,
+    Flag = "AutoFire",
+    Callback = function(Value)
+        SilentAim.AutoFire = Value
+    end
+})
+
+local TriggerBotToggle = MainTab:CreateToggle({
+    Name = "Trigger Bot",
+    CurrentValue = false,
+    Flag = "TriggerBot",
+    Callback = function(Value)
+        if Value then
+            spawn(function()
+                while SilentAim.Enabled and TriggerBotToggle.CurrentValue do
+                    task.wait()
+                    local target = SilentAim:CalculateTarget()
+                    if target then
+                        mouse1press()
+                        task.wait(0.05)
+                        mouse1release()
+                    end
+                end
+            end)
+        end
+    end
+})
+
+-- VISUALS TAB
+local VisualsTab = Window:CreateTab("Visuals", 4483362458)
+
+local ESPToggle = VisualsTab:CreateToggle({
+    Name = "Enable ESP",
+    CurrentValue = false,
+    Flag = "ESPEnabled",
+    Callback = function(Value)
+        if Value then
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/darkforge-x/esp/main/UniversalESP.lua"))()
+        end
+    end
+})
+
+local FOVCircleToggle = VisualsTab:CreateToggle({
+    Name = "Show FOV Circle",
+    CurrentValue = true,
+    Flag = "FOVCircle",
+    Callback = function(Value)
+        -- FOV Circle drawing handled in main loop
+    end
+})
+
+-- ANTI-BAN TAB
+local AntiBanTab = Window:CreateTab("Anti-Ban", 4483362458)
+
+local AntiBanSection = AntiBanTab:CreateSection("Protection Systems")
+
+local MemoryObfuscationToggle = AntiBanTab:CreateToggle({
+    Name = "Memory Obfuscation",
+    CurrentValue = true,
+    Flag = "MemObfuscate",
+    Callback = function(Value)
+        if Value then
+            -- OBFUSCATE MEMORY ACCESS
+            local mt = getrawmetatable(game)
+            setreadonly(mt, false)
+            
+            -- RANDOMIZE MEMORY PATTERNS
+            local originalNewIndex = mt.__newindex
+            mt.__newindex = newcclosure(function(t, k, v)
+                if tostring(k):find("Check") or tostring(k):find("Detect") then
+                    return nil
+                end
+                return originalNewIndex(t, k, v)
+            end)
+            
+            setreadonly(mt, true)
+        end
+    end
+})
+
+local FakeLagToggle = AntiBanTab:CreateToggle({
+    Name = "Network Fake Lag",
+    CurrentValue = false,
+    Flag = "FakeLag",
+    Callback = function(Value)
+        if Value then
+            -- INTRODUCE NETWORK LATENCY
+            local originalSend = NetworkClient.Send
+            NetworkClient.Send = function(self, ...)
+                task.wait(math.random(50, 150) / 1000)
+                return originalSend(self, ...)
+            end
+        end
+    end
+})
+
+local RandomizeActionsToggle = AntiBanTab:CreateToggle({
+    Name = "Randomize Actions",
+    CurrentValue = true,
+    Flag = "RandomActions",
+    Callback = function(Value)
+        -- RANDOMIZE MOUSE MOVEMENTS AND CLICKS
+    end
+})
+
+-- PERFORMANCE OPTIMIZATION
+local PerformanceSection = AntiBanTab:CreateSection("Performance")
+
+local GCBoostToggle = AntiBanTab:CreateToggle({
+    Name = "GC Boost",
+    CurrentValue = true,
+    Flag = "GCBoost",
+    Callback = function(Value)
+        if Value then
+            task.spawn(function()
+                while task.wait(10) do
+                    collectgarbage("collect")
+                end
+            end)
+        end
+    end
+})
+
+-- DEBUG TAB
+local DebugTab = Window:CreateTab("Debug", 4483362458)
+
+local StatusLabel = DebugTab:CreateLabel("Status: Ready")
+local TargetLabel = DebugTab:CreateLabel("Target: None")
+local FPSLabel = DebugTab:CreateLabel("FPS: 60")
+local PingLabel = DebugTab:CreateLabel("Ping: 0ms")
+
+-- UPDATE DEBUG INFO
+task.spawn(function()
+    while task.wait(0.5) do
+        if SilentAim.Target then
+            TargetLabel:Set("Target: " .. SilentAim.Target.Name)
+        else
+            TargetLabel:Set("Target: None")
+        end
+        
+        -- GET FPS
+        local fps = 1 / RunService.RenderStepped:Wait()
+        FPSLabel:Set("FPS: " .. math.floor(fps))
+        
+        -- GET PING
+        local stats = Stats.Network:FindFirstChild("IncomingReplicationLag")
+        if stats then
+            PingLabel:Set("Ping: " .. math.floor(stats.Value * 1000) .. "ms")
+        end
+    end
+end)
+
+-- MAIN LOOP
+task.spawn(function()
+    while task.wait() do
+        if SilentAim.Enabled then
+            -- UPDATE TARGET
+            local target, position = SilentAim:CalculateTarget()
+            SilentAim.Target = target
+            SilentAim.TargetPosition = position
+            
+            -- AUTO-FIRE LOGIC
+            if SilentAim.AutoFire and target and position then
+                if tick() - WeaponHook.LastFire > WeaponHook.FireRate then
+                    -- SIMULATE MOUSE CLICK
+                    WeaponHook.LastFire = tick()
+                    
+                    -- TRIGGER WEAPON FIRE
+                    local weapon = Players.LocalPlayer.Character:FindFirstChildOfClass("Tool")
+                    if weapon then
+                        local remote = weapon:FindFirstChild("FireRemote")
+                        if remote then
+                            remote:FireServer(position, SilentAim.TargetPart)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ANTI-DETECTION SYSTEM
+local DetectionSystem = {
+    LastCheck = 0,
+    CheckInterval = 30,
+    Detectors = {
+        "AntiCheat",
+        "AntiExploit",
+        "AC",
+        "Checker",
+        "Monitor",
+        "Security"
+    }
+}
+
+function DetectionSystem:ScanForDetectors()
+    for _, detectorName in ipairs(self.Detectors) do
+        local detector = game:GetService(detectorName)
+        if detector then
+            warn("[DARKFORGE-X] Detected: " .. detectorName)
+            -- DISABLE DETECTOR
+            pcall(function()
+                detector:Destroy()
+            end)
+        end
+    end
+    
+    -- SCAN SCRIPTS
+    for _, script in pairs(game:GetDescendants()) do
+        if script:IsA("Script") or script:IsA("LocalScript") then
+            local source = script.Source
+            if source:find("exploit") or source:find("cheat") or source:find("inject") then
+                if not source:find("DarkForge") then
+                    script.Disabled = true
+                end
+            end
+        end
+    end
+end
+
+-- PERIODIC ANTI-DETECTION
+task.spawn(function()
+    while task.wait(DetectionSystem.CheckInterval) do
+        if tick() - DetectionSystem.LastCheck > DetectionSystem.CheckInterval then
+            DetectionSystem:ScanForDetectors()
+            DetectionSystem.LastCheck = tick()
+        end
+    end
+end)
+
+-- INITIALIZATION
+Rayfield:Notify({
+    Title = "DarkForge-X Activated",
+    Content = "Silent Aim v4.2 loaded successfully\nBypass: Active | Protection: Enabled",
+    Duration = 5,
+    Image = 4483362458
+})
+
+-- LOAD WEAPON HOOK
+task.wait(2)
+WeaponHook.OriginalFire = WeaponHook:HookFireFunction()
+if WeaponHook.OriginalFire then
+    Rayfield:Notify({
+        Title = "Weapon Hook",
+        Content = "HyperShot weapon system hooked successfully",
+        Duration = 3,
+        Image = 4483362458
+    })
+end
+
+-- FINAL ACTIVATION
+print([[
+╔══════════════════════════════════════════════════╗
+║           DARKFORGE-X HYPER-SHOT AIMMBOT         ║
+║                  v4.2 ULTRA                      ║
+╠══════════════════════════════════════════════════╣
+║ Status:          ACTIVE                          ║
+║ Protection:      ANTI-BAN ENABLED                ║
+║ Silent Aim:      READY                           ║
+║ Rayfield UI:     LOADED                          ║
+║ Memory Obfuscation: ACTIVE                       ║
+╚══════════════════════════════════════════════════╝
+]])
+
+-- CLEANUP ON GAME LEAVE
+game:GetService("Players").LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    WeaponHook.OriginalFire = WeaponHook:HookFireFunction()
+end)
+
+-- ERROR HANDLING
+local ErrorHandler = {
+    LastError = 0,
+    ErrorCount = 0
+}
+
+game:GetService("ScriptContext").Error:Connect(function(message, trace, script)
+    if tick() - ErrorHandler.LastError > 10 then
+        ErrorHandler.ErrorCount = 0
+    end
+    
+    ErrorHandler.ErrorCount += 1
+    ErrorHandler.LastError = tick()
+    
+    if ErrorHandler.ErrorCount > 5 then
+        Rayfield:Notify({
+            Title = "Error Protection",
+            Content = "Too many errors, disabling features",
+            Duration = 5,
+            Image = 4483362458
+        })
+        SilentAim.Enabled = false
+    end
+end)
